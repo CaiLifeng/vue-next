@@ -34,9 +34,12 @@ class ComputedRefImpl<T> {
     private readonly _setter: ComputedSetter<T>,
     isReadonly: boolean
   ) {
+    // 创建 effect, 我们在看 effect 源码时知道了传入 lazy 代表不会立即执行，computed 表明 computed 上游依赖改变的时候
+    // 会优先 trigger runner effect, scheduler 表示 effect trigger 的时候会调用 scheduler 而不是直接调用 effect
     this.effect = effect(getter, {
       lazy: true,
       scheduler: () => {
+        // 在触发更新时把dirty置为true, 不会立即更新 
         if (!this._dirty) {
           this._dirty = true
           trigger(toRaw(this), TriggerOpTypes.SET, 'value')
@@ -50,6 +53,7 @@ class ComputedRefImpl<T> {
   get value() {
     // the computed ref may get wrapped by other proxies e.g. readonly() #3376
     const self = toRaw(this)
+    // dirty为ture, get操作时，执行effect获取最新值
     if (self._dirty) {
       self._value = this.effect()
       self._dirty = false

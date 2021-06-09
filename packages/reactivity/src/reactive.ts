@@ -54,6 +54,7 @@ function targetTypeMap(rawType: string) {
 }
 
 function getTargetType(value: Target) {
+  //Object.isExtensible 判断一个对象是否是可扩展的（是否可以在它上面添加新的属性）。
   return value[ReactiveFlags.SKIP] || !Object.isExtensible(value)
     ? TargetType.INVALID
     : targetTypeMap(toRawType(value))
@@ -177,26 +178,28 @@ function createReactiveObject(
   collectionHandlers: ProxyHandler<any>,
   proxyMap: WeakMap<Target, any>
 ) {
+  // 一系列检查
   if (!isObject(target)) {
     if (__DEV__) {
       console.warn(`value cannot be made reactive: ${String(target)}`)
     }
     return target
   }
-  // target is already a Proxy, return it.
-  // exception: calling readonly() on a reactive object
+
   if (
     target[ReactiveFlags.RAW] &&
     !(isReadonly && target[ReactiveFlags.IS_REACTIVE])
   ) {
     return target
   }
-  // target already has corresponding Proxy
+
+  // 如果已经是一个proxy对象
   const existingProxy = proxyMap.get(target)
   if (existingProxy) {
     return existingProxy
   }
   // only a whitelist of value types can be observed.
+  // 如果已经是被markRaw了或者是一个不可代理对象，直接返回target
   const targetType = getTargetType(target)
   if (targetType === TargetType.INVALID) {
     return target
@@ -205,7 +208,7 @@ function createReactiveObject(
     target,
     targetType === TargetType.COLLECTION ? collectionHandlers : baseHandlers
   )
-  proxyMap.set(target, proxy)
+  proxyMap.set(target, proxy) // 每次都会存起来
   return proxy
 }
 

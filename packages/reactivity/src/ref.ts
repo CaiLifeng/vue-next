@@ -56,7 +56,7 @@ class RefImpl<T> {
 
   public readonly __v_isRef = true
 
-  constructor(private _rawValue: T, public readonly _shallow: boolean) {
+  constructor(private _rawValue: T, public readonly _shallow = false) {
     this._value = _shallow ? _rawValue : convert(_rawValue)
   }
 

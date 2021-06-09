@@ -26,21 +26,6 @@ export interface ReactiveEffectOptions {
   onTrack?: (event: DebuggerEvent) => void
   onTrigger?: (event: DebuggerEvent) => void
   onStop?: () => void
-  /**
-   * Indicates whether the job is allowed to recursively trigger itself when
-   * managed by the scheduler.
-   *
-   * By default, a job cannot trigger itself because some built-in method calls,
-   * e.g. Array.prototype.push actually performs reads as well (#1740) which
-   * can lead to confusing infinite loops.
-   * The allowed cases are component update functions and watch callbacks.
-   * Component update functions may update child component props, which in turn
-   * trigger flush: "pre" watch callbacks that mutates state that the parent
-   * relies on (#1801). Watch callbacks doesn't track its dependencies so if it
-   * triggers itself again, it's likely intentional and it is the user's
-   * responsibility to perform recursive state mutation that eventually
-   * stabilizes (#1727).
-   */
   allowRecurse?: boolean
 }
 
@@ -99,7 +84,7 @@ function createReactiveEffect<T = any>(
 ): ReactiveEffect<T> {
   const effect = function reactiveEffect(): unknown {
     if (!effect.active) {
-      return fn()
+      return options.scheduler ? undefined : fn()
     }
     if (!effectStack.includes(effect)) {
       cleanup(effect)
@@ -153,6 +138,38 @@ export function resetTracking() {
   shouldTrack = last === undefined ? true : last
 }
 
+/* 
+targetMap数据结构
+
+type Dep = Set<ReactiveEffect>
+type KeyToDepMap = Map<any, Dep>
+const targetMap = new WeakMap<any, KeyToDepMap>()
+
+targetMap = {
+  target: {
+    key:[effect1,effect2]
+  }
+};
+
+例子：
+const state = reactive({count:0});
+effect(()=>{
+  document.getElementById('header').innerText = state.count;
+})
+
+令 fn = ()=>{
+  document.getElementById('header').innerText = state.count;
+}
+当执行到这个effect的时候，把fn作为activeEffect，并且push进了effectStack[]。
+
+fn()也会执行一次，这时候访问了state.count，就会执行到proxy的get handler，handler调用了trace，把activeEffect放进去了targetMap
+targetMap = {
+  target: {
+    key:[fn]
+  }
+};
+
+*/
 export function track(target: object, type: TrackOpTypes, key: unknown) {
   if (!shouldTrack || activeEffect === undefined) {
     return
@@ -197,6 +214,7 @@ export function trigger(
   const add = (effectsToAdd: Set<ReactiveEffect> | undefined) => {
     if (effectsToAdd) {
       effectsToAdd.forEach(effect => {
+        // 避免重复收集
         if (effect !== activeEffect || effect.allowRecurse) {
           effects.add(effect)
         }

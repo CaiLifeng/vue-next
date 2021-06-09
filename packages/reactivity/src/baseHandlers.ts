@@ -76,6 +76,10 @@ const arrayInstrumentations: Record<string, Function> = {}
 
 function createGetter(isReadonly = false, shallow = false) {
   return function get(target: Target, key: string | symbol, receiver: object) {
+    /*  
+    const state = reactive({count:0});
+    console.log(state['__v_isReactive']); // true 
+    */
     if (key === ReactiveFlags.IS_REACTIVE) {
       return !isReadonly
     } else if (key === ReactiveFlags.IS_READONLY) {
@@ -115,12 +119,15 @@ function createGetter(isReadonly = false, shallow = false) {
       return res
     }
 
-    if (isRef(res)) {
+    // 如果是ref，直接返回res.value
+    if (isRef(res)) { 
       // ref unwrapping - does not apply for Array + integer key.
       const shouldUnwrap = !targetIsArray || !isIntegerKey(key)
       return shouldUnwrap ? res.value : res
     }
 
+
+    // 需要用到的子对象才设置为reactive，不像vue2。
     if (isObject(res)) {
       // Convert returned value into a proxy as well. we do the isObject check
       // here to avoid invalid value warning. Also need to lazy access readonly
@@ -144,8 +151,11 @@ function createSetter(shallow = false) {
   ): boolean {
     let oldValue = (target as any)[key]
     if (!shallow) {
+      // 如果是观察过响应式数据，那么获取它映射的原始数据
       value = toRaw(value)
       oldValue = toRaw(oldValue)
+      // 如果旧值是 ref 类型数据，而新的值不是 ref，那么直接赋值给 oldValue.value
+      // 因为 ref 数据在 set value 的时候就已经 trigger 依赖了，所以直接 return 就行
       if (!isArray(target) && isRef(oldValue) && !isRef(value)) {
         oldValue.value = value
         return true
@@ -154,14 +164,32 @@ function createSetter(shallow = false) {
       // in shallow mode, objects are set as-is regardless of reactive or not
     }
 
+  // 对象上是否这个 key 则是 set，无则是 add
     const hadKey =
       isArray(target) && isIntegerKey(key)
         ? Number(key) < target.length
         : hasOwn(target, key)
     const result = Reflect.set(target, key, value, receiver)
     // don't trigger if target is something up in the prototype chain of original
+
+
+    /*  
+    如果 target 原型链上的数据，那么就不触发依赖回调
+    const child = { name: 'child' }
+
+    const parent = new Proxy({ name: 'parent' }, {
+      set (target, key, value, receiver) {
+        console.log(target, receiver)
+        return Reflect.set(target, key, value, receiver)
+      }
+    })
+
+    Object.setPrototypeOf(child, parent)
+
+    child.foo = 1
+    结果：{name: "parent"} {name: "child"} */
     if (target === toRaw(receiver)) {
-      if (!hadKey) {
+      if (!hadKey) { // 对象上是否这个 key 则是 set，无则是 add
         trigger(target, TriggerOpTypes.ADD, key, value)
       } else if (hasChanged(value, oldValue)) {
         trigger(target, TriggerOpTypes.SET, key, value, oldValue)
