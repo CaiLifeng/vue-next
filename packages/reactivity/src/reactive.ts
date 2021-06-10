@@ -13,6 +13,7 @@ import {
 } from './collectionHandlers'
 import { UnwrapRef, Ref } from './ref'
 
+// 这几个枚举值用来标记target的类型
 export const enum ReactiveFlags {
   SKIP = '__v_skip',
   IS_REACTIVE = '__v_isReactive',
@@ -20,6 +21,13 @@ export const enum ReactiveFlags {
   RAW = '__v_raw'
 }
 
+/* 
+  target = {
+    a:1,
+    b:2,
+    __v_isReactive:true
+  }; 
+*/
 export interface Target {
   [ReactiveFlags.SKIP]?: boolean
   [ReactiveFlags.IS_REACTIVE]?: boolean
@@ -27,15 +35,17 @@ export interface Target {
   [ReactiveFlags.RAW]?: any
 }
 
+// 存储target和各种转变之后的对象，用于还原，比如 toRaw
 export const reactiveMap = new WeakMap<Target, any>()
 export const shallowReactiveMap = new WeakMap<Target, any>()
 export const readonlyMap = new WeakMap<Target, any>()
 export const shallowReadonlyMap = new WeakMap<Target, any>()
 
+// target的几种类型，见下面
 const enum TargetType {
-  INVALID = 0,
-  COMMON = 1,
-  COLLECTION = 2
+  INVALID = 0, 
+  COMMON = 1, // 使用baseHandlers
+  COLLECTION = 2 //使用collectionHandlers
 }
 
 function targetTypeMap(rawType: string) {
@@ -185,6 +195,8 @@ function createReactiveObject(
     }
     return target
   }
+
+
 
   if (
     target[ReactiveFlags.RAW] &&

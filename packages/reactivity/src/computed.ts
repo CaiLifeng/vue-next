@@ -21,8 +21,8 @@ export interface WritableComputedOptions<T> {
 }
 
 class ComputedRefImpl<T> {
-  private _value!: T
-  private _dirty = true
+  private _value!: T // 缓存结果
+  private _dirty = true  // 重新计算开关
 
   public readonly effect: ReactiveEffect<T>
 
@@ -34,12 +34,11 @@ class ComputedRefImpl<T> {
     private readonly _setter: ComputedSetter<T>,
     isReadonly: boolean
   ) {
-    // 创建 effect, 我们在看 effect 源码时知道了传入 lazy 代表不会立即执行，computed 表明 computed 上游依赖改变的时候
-    // 会优先 trigger runner effect, scheduler 表示 effect trigger 的时候会调用 scheduler 而不是直接调用 effect
+    // 对传入的 getter 函数进行包装, lazy 代表不会立即执行，scheduler 表示 effect trigger 的时候会调用 scheduler 而不是直接调用 effect
     this.effect = effect(getter, {
       lazy: true,
       scheduler: () => {
-        // 在触发更新时把dirty置为true, 不会立即更新 
+        // 在触发更新时把 dirty 置为 true, 不会立即更新 
         if (!this._dirty) {
           this._dirty = true
           trigger(toRaw(this), TriggerOpTypes.SET, 'value')
@@ -49,7 +48,8 @@ class ComputedRefImpl<T> {
 
     this[ReactiveFlags.IS_READONLY] = isReadonly
   }
-
+ 
+  // 访问计算属性的时候 默认调用此时的get函数
   get value() {
     // the computed ref may get wrapped by other proxies e.g. readonly() #3376
     const self = toRaw(this)
@@ -58,6 +58,7 @@ class ComputedRefImpl<T> {
       self._value = this.effect()
       self._dirty = false
     }
+    // 访问的时候进行依赖收集 此时收集的是访问这个计算属性的副作用函数
     track(self, TrackOpTypes.GET, 'value')
     return self._value
   }
@@ -67,6 +68,29 @@ class ComputedRefImpl<T> {
   }
 }
 
+
+/* 
+## computed的两种使用方式
+
+const count = ref(1)
+const plusOne = computed(() => count.value + 1)
+
+console.log(plusOne.value) // 2
+
+plusOne.value++ // 错误
+
+-----------------------------------------------------------
+
+const count = ref(1)
+const plusOne = computed({
+  get: () => count.value + 1,
+  set: val => {
+    count.value = val - 1
+  }
+})
+
+plusOne.value = 1
+console.log(count.value) // 0 */
 export function computed<T>(getter: ComputedGetter<T>): ComputedRef<T>
 export function computed<T>(
   options: WritableComputedOptions<T>

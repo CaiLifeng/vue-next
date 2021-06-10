@@ -59,6 +59,8 @@ export function effect<T = any>(
   if (isEffect(fn)) {
     fn = fn.raw
   }
+
+  // 将effect包了一层，主要是判断effect有没有lazy参数，没有的话，立即执行
   const effect = createReactiveEffect(fn, options)
   if (!options.lazy) {
     effect()
@@ -70,6 +72,7 @@ export function stop(effect: ReactiveEffect) {
   if (effect.active) {
     cleanup(effect)
     if (effect.options.onStop) {
+      // effect有个onStop的回调
       effect.options.onStop()
     }
     effect.active = false
@@ -162,7 +165,7 @@ effect(()=>{
 }
 当执行到这个effect的时候，把fn作为activeEffect，并且push进了effectStack[]。
 
-fn()也会执行一次，这时候访问了state.count，就会执行到proxy的get handler，handler调用了trace，把activeEffect放进去了targetMap
+fn()也会执行一次，这时候访问了state.count，就会执行到proxy的get handler，handler调用了track，把activeEffect放进去了targetMap
 targetMap = {
   target: {
     key:[fn]
@@ -186,6 +189,7 @@ export function track(target: object, type: TrackOpTypes, key: unknown) {
     dep.add(activeEffect)
     activeEffect.deps.push(dep)
     if (__DEV__ && activeEffect.options.onTrack) {
+      // 开发环境用于调试，注入一些回调信息
       activeEffect.options.onTrack({
         effect: activeEffect,
         target,
@@ -206,10 +210,11 @@ export function trigger(
 ) {
   const depsMap = targetMap.get(target)
   if (!depsMap) {
-    // never been tracked
+    // never been tracked。如果target没有任何跟踪中的属性，直接return
     return
   }
 
+  // 声明一个集合和方法，用于添加当前key对应的依赖集合
   const effects = new Set<ReactiveEffect>()
   const add = (effectsToAdd: Set<ReactiveEffect> | undefined) => {
     if (effectsToAdd) {
@@ -222,11 +227,47 @@ export function trigger(
     }
   }
 
+
+
+
+  // 根据不同的类型选择使用不同的方式将当前key的依赖添加到effects
+
   if (type === TriggerOpTypes.CLEAR) {
-    // collection being cleared
-    // trigger all effects for target
+  // 如果是Map或者Set的clear()触发的，将所有effect添加进去effects，执行所有effect
     depsMap.forEach(add)
   } else if (key === 'length' && isArray(target)) {
+    // 如果是数组并且改变了属性length
+
+
+/*   
+    var arrayChangeHandler = {
+      get: function(target, property) {
+        console.log('getting ' + property + ' for ' + target);
+        return target[property];
+      },
+      set: function(target, property, value, receiver) {
+        console.log('setting ' + property + ' for ' + target + ' with value ' + value);
+        target[property] = value;
+        return true;
+      }
+    };
+    
+    var originalArray = [1,2,3];
+    var proxyToArray = new Proxy( originalArray, arrayChangeHandler );
+    
+    proxyToArray.unshift('Test');
+    getting unshift for 1,2,3
+    getting length for 1,2,3
+    getting 2 for 1,2,3
+    setting 3 for 1,2,3 with value 3
+    getting 1 for 1,2,3,3
+    setting 2 for 1,2,3,3 with value 2
+    getting 0 for 1,2,2,3
+    setting 1 for 1,2,2,3 with value 1
+    setting 0 for 1,1,2,3 with value Test
+    setting length for Test,1,2,3 with value 4
+ */
+
     depsMap.forEach((dep, key) => {
       if (key === 'length' || key >= (newValue as number)) {
         add(dep)
@@ -234,11 +275,13 @@ export function trigger(
     })
   } else {
     // schedule runs for SET | ADD | DELETE
+    // set ｜ add ｜ delete操作都要执行effect
     if (key !== void 0) {
       add(depsMap.get(key))
     }
 
     // also run for iteration key on ADD | DELETE | Map.SET
+    // 一些可迭代的key
     switch (type) {
       case TriggerOpTypes.ADD:
         if (!isArray(target)) {
@@ -269,6 +312,7 @@ export function trigger(
 
   const run = (effect: ReactiveEffect) => {
     if (__DEV__ && effect.options.onTrigger) {
+      // 开发环境用于调试，注入一些回调信息
       effect.options.onTrigger({
         effect,
         target,
@@ -279,12 +323,16 @@ export function trigger(
         oldTarget
       })
     }
+    // computed有scheduler，将effect放入scheduler，延迟执行
     if (effect.options.scheduler) {
       effect.options.scheduler(effect)
     } else {
+      // 普通执行effect函数
       effect()
     }
   }
 
+  //将effect一个一个运行
   effects.forEach(run)
 }
+

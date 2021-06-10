@@ -31,6 +31,7 @@ import { isRef } from './ref'
 
 const isNonTrackableKeys = /*#__PURE__*/ makeMap(`__proto__,__v_isRef,__isVue`)
 
+// JS 内部语言行为描述符集合，比如 Symbol.iterator 这些，
 const builtInSymbols = new Set(
   Object.getOwnPropertyNames(Symbol)
     .map(key => (Symbol as any)[key])
@@ -62,8 +63,7 @@ const arrayInstrumentations: Record<string, Function> = {}
     }
   }
 })
-// instrument length-altering mutation methods to avoid length being tracked
-// which leads to infinite loops in some cases (#2137)
+// 一些会导致数组length变化的操作，要另外处理，不然在某些情况下会导致无限循环
 ;(['push', 'pop', 'shift', 'unshift', 'splice'] as const).forEach(key => {
   const method = Array.prototype[key] as any
   arrayInstrumentations[key] = function(this: unknown[], ...args: unknown[]) {
@@ -112,6 +112,7 @@ function createGetter(isReadonly = false, shallow = false) {
     }
 
     if (!isReadonly) {
+      // 触发依赖收集
       track(target, TrackOpTypes.GET, key)
     }
 
